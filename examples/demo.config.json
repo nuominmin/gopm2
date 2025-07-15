@@ -1,0 +1,28 @@
+{
+  "apps": [
+    {
+      "name": "example-app",
+      "script": "./app.js",
+      "args": [
+        "--port",
+        "3000"
+      ],
+      "cwd": "/path/to/app",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000"
+      },
+      "instances": 2,
+      "exec_mode": "cluster",
+      "watch": true,
+      "watch_ignore": [
+        "node_modules",
+        "logs"
+      ],
+      "log_file": "./logs/app.log",
+      "error_file": "./logs/app-error.log",
+      "max_restarts": 10,
+      "min_uptime": "10s"
+    }
+  ]
+}

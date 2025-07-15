@@ -1,0 +1,54 @@
+{
+  "apps": [
+    {
+      "name": "web-server",
+      "script": "./server.js",
+      "args": ["--port", "3000"],
+      "cwd": "/path/to/app",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3000"
+      },
+      "instances": 2,
+      "exec_mode": "cluster",
+      "watch": true,
+      "watch_ignore": ["node_modules", "logs", "*.log"],
+      "log_file": "./logs/web-server.log",
+      "error_file": "./logs/web-server-error.log",
+      "max_restarts": 10,
+      "min_uptime": "10s"
+    },
+    {
+      "name": "api-server",
+      "script": "./api.py",
+      "cwd": "/path/to/api",
+      "env": {
+        "FLASK_ENV": "production",
+        "DATABASE_URL": "postgresql://user:pass@localhost/db"
+      },
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "log_file": "./logs/api-server.log",
+      "error_file": "./logs/api-server-error.log",
+      "max_restarts": 5,
+      "min_uptime": "5s"
+    },
+    {
+      "name": "worker",
+      "script": "./worker.go",
+      "cwd": "/path/to/worker",
+      "env": {
+        "WORKER_ENV": "production"
+      },
+      "instances": 4,
+      "exec_mode": "fork",
+      "watch": true,
+      "watch_ignore": ["*.log", "tmp/"],
+      "log_file": "./logs/worker.log",
+      "error_file": "./logs/worker-error.log",
+      "max_restarts": 15,
+      "min_uptime": "1s"
+    }
+  ]
+} 
