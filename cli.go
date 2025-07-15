@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -449,7 +450,121 @@ func runConfigExport(cmd *cobra.Command, args []string) {
 }
 
 func runStartup(cmd *cobra.Command, args []string) {
-	fmt.Println("系统启动脚本功能待实现")
+	err := generateStartupScript()
+	if err != nil {
+		fmt.Printf("错误: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✓ 系统启动脚本已生成")
+}
+
+// generateStartupScript 生成系统启动脚本
+func generateStartupScript() error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("获取可执行文件路径失败: %v", err)
+	}
+
+	switch runtime.GOOS {
+	case "linux":
+		return generateSystemdService(execPath)
+	case "darwin":
+		return generateLaunchdPlist(execPath)
+	case "windows":
+		return generateWindowsService(execPath)
+	default:
+		return fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
+	}
+}
+
+// generateSystemdService 生成Linux systemd服务文件
+func generateSystemdService(execPath string) error {
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=GoPM2 Process Manager
+After=network.target
+
+[Service]
+Type=simple
+User=%s
+ExecStart=%s resurrect
+ExecReload=/bin/kill -USR2 $MAINPID
+KillMode=mixed
+Restart=always
+RestartSec=5
+WorkingDirectory=%s
+
+[Install]
+WantedBy=multi-user.target
+`, os.Getenv("USER"), execPath, os.Getenv("HOME"))
+
+	servicePath := "/etc/systemd/system/gopm2.service"
+
+	fmt.Printf("请以root权限运行以下命令来安装服务:\n")
+	fmt.Printf("sudo tee %s > /dev/null << 'EOF'\n%sEOF\n", servicePath, serviceContent)
+	fmt.Printf("sudo systemctl daemon-reload\n")
+	fmt.Printf("sudo systemctl enable gopm2\n")
+	fmt.Printf("sudo systemctl start gopm2\n")
+
+	return nil
+}
+
+// generateLaunchdPlist 生成macOS launchd配置文件
+func generateLaunchdPlist(execPath string) error {
+	homeDir := os.Getenv("HOME")
+	plistContent := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gopm2.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>resurrect</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>%s</string>
+</dict>
+</plist>
+`, execPath, homeDir)
+
+	plistPath := filepath.Join(homeDir, "Library/LaunchAgents/com.gopm2.agent.plist")
+
+	fmt.Printf("请运行以下命令来安装服务:\n")
+	fmt.Printf("mkdir -p %s\n", filepath.Dir(plistPath))
+	fmt.Printf("cat > %s << 'EOF'\n%sEOF\n", plistPath, plistContent)
+	fmt.Printf("launchctl load %s\n", plistPath)
+
+	return nil
+}
+
+// generateWindowsService 生成Windows服务脚本
+func generateWindowsService(execPath string) error {
+	// 提供两种选择：相对路径和完整路径
+	relativePath := "gopm2.exe"
+
+	fmt.Printf("请以管理员权限在PowerShell或CMD中运行以下命令:\n\n")
+	fmt.Printf("# 方式1: 使用相对路径 (推荐，需要gopm2.exe在PATH中)\n")
+	fmt.Printf("sc create \"GoPM2\" binPath= \"%s resurrect\" start= auto\n", relativePath)
+	fmt.Printf("sc description \"GoPM2\" \"GoPM2 Process Manager - 进程管理器\"\n\n")
+
+	fmt.Printf("# 方式2: 使用完整路径 (如果相对路径不工作)\n")
+	fmt.Printf("sc create \"GoPM2\" binPath= \"%s resurrect\" start= auto\n", execPath)
+	fmt.Printf("sc description \"GoPM2\" \"GoPM2 Process Manager - 进程管理器\"\n\n")
+
+	fmt.Printf("# 启动服务\n")
+	fmt.Printf("sc start \"GoPM2\"\n\n")
+
+	fmt.Printf("# 服务管理命令:\n")
+	fmt.Printf("# 启动服务: sc start \"GoPM2\"\n")
+	fmt.Printf("# 停止服务: sc stop \"GoPM2\"\n")
+	fmt.Printf("# 删除服务: sc delete \"GoPM2\"\n")
+
+	return nil
 }
 
 func runSave(cmd *cobra.Command, args []string) {
