@@ -13,10 +13,12 @@ import (
 )
 
 var (
+	version = "1.0.1"
 	pm      *ProcessManager
 	rootCmd = &cobra.Command{
-		Use:   "gopm2",
-		Short: "Go实现的进程管理器，类似PM2",
+		Use:     "gopm2",
+		Version: version,
+		Short:   "Go实现的进程管理器，类似PM2",
 		Long: `GoPM2 是一个用Go语言实现的进程管理器，提供类似PM2的功能：
 - 进程管理（启动、停止、重启、删除）
 - 守护进程和自动重启
