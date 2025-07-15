@@ -21,13 +21,21 @@ build-windows:
 	@echo "构建 Windows 版本..."
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY_WINDOWS) .
 
-# 跨平台构建
+# 跨平台构建 (Linux/macOS)
 .PHONY: build-all
 build-all:
 	@echo "构建所有平台版本..."
 	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux .
 	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin .
 	GOOS=windows GOARCH=amd64 go build -o $(BINARY_WINDOWS) .
+
+# Windows PowerShell 跨平台构建
+.PHONY: build-all-ps
+build-all-ps:
+	@echo "Windows PowerShell 构建所有平台版本..."
+	powershell -Command "$$env:GOOS='linux'; $$env:GOARCH='amd64'; go build -o $(BINARY_NAME)-linux ."
+	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='amd64'; go build -o $(BINARY_NAME)-darwin ."  
+	powershell -Command "$$env:GOOS='windows'; $$env:GOARCH='amd64'; go build -o $(BINARY_WINDOWS) ."
 
 # 清理
 .PHONY: clean
