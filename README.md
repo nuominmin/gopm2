@@ -318,13 +318,27 @@ gopm2/
 # 安装依赖
 go mod tidy
 
-# 构建项目
+# 构建当前平台
 go build -o gopm2
+```
 
-# 跨平台构建
+### 跨平台构建
+
+```bash
+# Linux/macOS 环境
 GOOS=linux GOARCH=amd64 go build -o gopm2-linux
 GOOS=darwin GOARCH=amd64 go build -o gopm2-darwin
 GOOS=windows GOARCH=amd64 go build -o gopm2.exe
+
+# Windows PowerShell 环境
+$env:GOOS="linux"; $env:GOARCH="amd64"; go build -o gopm2-linux
+$env:GOOS="darwin"; $env:GOARCH="amd64"; go build -o gopm2-darwin  
+$env:GOOS="windows"; $env:GOARCH="amd64"; go build -o gopm2.exe
+
+# Windows CMD 环境
+set GOOS=linux&& set GOARCH=amd64&& go build -o gopm2-linux
+set GOOS=darwin&& set GOARCH=amd64&& go build -o gopm2-darwin
+set GOOS=windows&& set GOARCH=amd64&& go build -o gopm2.exe
 ```
 
 ## 🎨 监控界面
