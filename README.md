@@ -96,13 +96,13 @@ chmod +x gopm2
 ### 启动应用
 ```bash
 # 启动Node.js应用
-./gopm2 start app.js --name "my-app" --instances 2
+./gopm2 start examples/test-app.js --name "jsapp" --instances 2
 
 # 启动Python应用  
-./gopm2 start script.py --name "python-app" --watch
+./gopm2 start examples/test-server.py --name "pythonapp" --watch
 
 # 启动Go应用
-./gopm2 start main.go --name "go-app" --env "PORT=8080"
+./gopm2 start examples/test-app.go --name "goapp" --env "PORT=8080"
 
 # 使用配置文件批量启动
 ./gopm2 start examples/ecosystem.config.json
@@ -114,15 +114,15 @@ chmod +x gopm2
 ./gopm2 list
 
 # 查看进程详情  
-./gopm2 describe my-app
+./gopm2 describe goapp
 
 # 实时日志
-./gopm2 logs my-app --follow
+./gopm2 logs goapp --follow
 
 # 进程操作
-./gopm2 restart my-app
-./gopm2 stop my-app  
-./gopm2 delete my-app
+./gopm2 restart goapp
+./gopm2 stop goapp  
+./gopm2 delete goapp
 ```
 
 ### 系统重启后自启动
