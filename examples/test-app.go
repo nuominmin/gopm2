@@ -37,6 +37,19 @@ func main() {
 		w.Write([]byte(response))
 	})
 
+	http.HandleFunc("/panic", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("[%s] 触发panic测试 - PID: %d\n", time.Now().Format("2006-01-02 15:04:05"), os.Getpid())
+		// 在单独的goroutine中panic，这样不会被HTTP服务器恢复
+		go func() {
+			panic("test panic - 程序应该退出")
+		}()
+		// 给一点时间让panic发生
+		time.Sleep(100 * time.Millisecond)
+		// 如果panic没有生效，强制退出
+		fmt.Println("强制退出程序")
+		os.Exit(1)
+	})
+
 	// 启动服务器
 	go func() {
 		fmt.Printf("✓ 服务器启动成功，监听端口 %s\n", port)

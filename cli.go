@@ -1,14 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +34,16 @@ var (
 
 func init() {
 	pm = NewProcessManager()
+
+	// daemon 命令（隐藏命令，用于内部启动守护进程）
+	var daemonCmd = &cobra.Command{
+		Use:    "daemon",
+		Short:  "运行守护进程模式（内部命令）",
+		Hidden: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			runDaemon()
+		},
+	}
 
 	// start 命令
 	var startCmd = &cobra.Command{
@@ -70,7 +83,7 @@ func init() {
 		Run:   runRestart,
 	}
 
-	// delete/del 命令
+	// delete 命令
 	var deleteCmd = &cobra.Command{
 		Use:     "delete <name|id>",
 		Aliases: []string{"del"},
@@ -79,18 +92,18 @@ func init() {
 		Run:     runDelete,
 	}
 
-	// list/ls 命令
+	// list 命令
 	var listCmd = &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "status"},
-		Short:   "显示所有应用状态",
+		Short:   "列出所有进程",
 		Run:     runList,
 	}
 
 	// logs 命令
 	var logsCmd = &cobra.Command{
 		Use:   "logs <name|id>",
-		Short: "显示应用日志",
+		Short: "显示日志",
 		Args:  cobra.ExactArgs(1),
 		Run:   runLogs,
 	}
@@ -102,7 +115,7 @@ func init() {
 	// describe 命令
 	var describeCmd = &cobra.Command{
 		Use:   "describe <name|id>",
-		Short: "显示应用详细信息",
+		Short: "显示进程详细信息",
 		Args:  cobra.ExactArgs(1),
 		Run:   runDescribe,
 	}
@@ -110,32 +123,33 @@ func init() {
 	// monit 命令
 	var monitCmd = &cobra.Command{
 		Use:   "monit",
-		Short: "实时监控所有应用",
+		Short: "实时监控所有进程",
 		Run:   runMonit,
 	}
 
 	// flush 命令
 	var flushCmd = &cobra.Command{
-		Use:   "flush [name|id]",
-		Short: "清空日志",
+		Use:   "flush",
+		Short: "清空所有日志文件",
 		Run:   runFlush,
 	}
 
-	// config 命令
+	// config 相关命令
 	var configCmd = &cobra.Command{
 		Use:   "config",
 		Short: "配置文件相关操作",
 	}
 
 	var configGenerateCmd = &cobra.Command{
-		Use:   "generate [file]",
-		Short: "生成配置文件模板",
+		Use:   "generate [output]",
+		Short: "生成示例配置文件",
 		Run:   runConfigGenerate,
 	}
 
 	var configExportCmd = &cobra.Command{
-		Use:   "export [file]",
-		Short: "导出当前配置",
+		Use:   "export <output>",
+		Short: "导出当前运行的进程为配置文件",
+		Args:  cobra.ExactArgs(1),
 		Run:   runConfigExport,
 	}
 
@@ -143,6 +157,7 @@ func init() {
 	var startupCmd = &cobra.Command{
 		Use:   "startup",
 		Short: "生成系统启动脚本",
+		Long:  "生成系统启动脚本，以便在系统重启后自动启动GoPM2和所有进程",
 		Run:   runStartup,
 	}
 
@@ -180,15 +195,30 @@ func init() {
 		Run:   runWatchDisable,
 	}
 
+	// stop-daemon 命令
+	var stopDaemonCmd = &cobra.Command{
+		Use:   "stop-daemon",
+		Short: "停止守护进程",
+		Run:   runStopDaemon,
+	}
+
 	// 添加子命令
 	configCmd.AddCommand(configGenerateCmd, configExportCmd)
 	watchCmd.AddCommand(watchEnableCmd, watchDisableCmd)
 
 	rootCmd.AddCommand(
-		startCmd, stopCmd, restartCmd, deleteCmd, listCmd,
+		daemonCmd, startCmd, stopCmd, restartCmd, deleteCmd, listCmd,
 		logsCmd, describeCmd, monitCmd, flushCmd,
-		configCmd, startupCmd, saveCmd, resurrectCmd, watchCmd,
+		configCmd, startupCmd, saveCmd, resurrectCmd, watchCmd, stopDaemonCmd,
 	)
+}
+
+// Execute 执行CLI命令
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Printf("错误: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // runStart 启动命令处理
@@ -204,11 +234,14 @@ func runStart(cmd *cobra.Command, args []string) {
 		}
 
 		for _, appConfig := range config.Apps {
-			process, err := pm.StartProcess(appConfig)
+			configJSON, _ := json.Marshal(appConfig)
+			response, err := pm.sendCommand("START", string(configJSON))
 			if err != nil {
 				fmt.Printf("启动 '%s' 失败: %v\n", appConfig.Name, err)
+			} else if strings.HasPrefix(response, "SUCCESS:") {
+				fmt.Println("✓ " + strings.TrimPrefix(response, "SUCCESS: "))
 			} else {
-				fmt.Printf("✓ 启动 '%s' (ID: %d)\n", process.Name, process.ID)
+				fmt.Printf("启动 '%s' 失败: %s\n", appConfig.Name, strings.TrimPrefix(response, "ERROR: "))
 			}
 		}
 		return
@@ -250,51 +283,92 @@ func runStart(cmd *cobra.Command, args []string) {
 		MinUptime:   minUptime,
 	}
 
-	process, err := pm.StartProcess(config)
+	configJSON, _ := json.Marshal(config)
+	response, err := pm.sendCommand("START", string(configJSON))
 	if err != nil {
 		fmt.Printf("错误: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ 启动 '%s' (ID: %d)\n", process.Name, process.ID)
+	if strings.HasPrefix(response, "SUCCESS:") {
+		fmt.Println("✓ " + strings.TrimPrefix(response, "SUCCESS: "))
+	} else {
+		fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+		os.Exit(1)
+	}
 }
 
 // runStop 停止命令处理
 func runStop(cmd *cobra.Command, args []string) {
 	nameOrID := args[0]
-	err := pm.StopProcess(nameOrID)
+	response, err := pm.sendCommand("STOP", nameOrID)
 	if err != nil {
 		fmt.Printf("错误: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ 停止 '%s'\n", nameOrID)
+
+	if strings.HasPrefix(response, "SUCCESS:") {
+		fmt.Println("✓ " + strings.TrimPrefix(response, "SUCCESS: "))
+	} else {
+		fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+		os.Exit(1)
+	}
 }
 
 // runRestart 重启命令处理
 func runRestart(cmd *cobra.Command, args []string) {
 	nameOrID := args[0]
-	err := pm.RestartProcess(nameOrID)
+	response, err := pm.sendCommand("RESTART", nameOrID)
 	if err != nil {
 		fmt.Printf("错误: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ 重启 '%s'\n", nameOrID)
+
+	if strings.HasPrefix(response, "SUCCESS:") {
+		fmt.Println("✓ " + strings.TrimPrefix(response, "SUCCESS: "))
+	} else {
+		fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+		os.Exit(1)
+	}
 }
 
 // runDelete 删除命令处理
 func runDelete(cmd *cobra.Command, args []string) {
 	nameOrID := args[0]
-	err := pm.DeleteProcess(nameOrID)
+	response, err := pm.sendCommand("DELETE", nameOrID)
 	if err != nil {
 		fmt.Printf("错误: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ 删除 '%s'\n", nameOrID)
+
+	if strings.HasPrefix(response, "SUCCESS:") {
+		fmt.Println("✓ " + strings.TrimPrefix(response, "SUCCESS: "))
+	} else {
+		fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+		os.Exit(1)
+	}
 }
 
 // runList 列表命令处理
 func runList(cmd *cobra.Command, args []string) {
-	processes := pm.GetProcessList()
+	response, err := pm.sendCommand("LIST")
+	if err != nil {
+		fmt.Printf("错误: %v\n", err)
+		os.Exit(1)
+	}
+
+	if strings.HasPrefix(response, "ERROR:") {
+		fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+		os.Exit(1)
+	}
+
+	// 解析进程列表
+	var processes []*Process
+	err = json.Unmarshal([]byte(response), &processes)
+	if err != nil {
+		fmt.Printf("解析进程列表失败: %v\n", err)
+		os.Exit(1)
+	}
 
 	if len(processes) == 0 {
 		fmt.Println("没有运行的进程")
@@ -324,16 +398,64 @@ func runLogs(cmd *cobra.Command, args []string) {
 	follow, _ := cmd.Flags().GetBool("follow")
 	showError, _ := cmd.Flags().GetBool("error")
 
-	var err error
-	if showError {
-		err = pm.GetErrorLogs(nameOrID, lines, follow)
-	} else {
-		err = pm.GetLogs(nameOrID, lines, follow)
-	}
+	if follow {
+		// 对于follow模式，我们需要直接处理，因为需要实时输出
+		// 通过守护进程处理follow模式
+		linesStr := fmt.Sprintf("%d", lines)
+		followStr := "true"
+		showErrorStr := fmt.Sprintf("%t", showError)
 
-	if err != nil {
-		fmt.Printf("错误: %v\n", err)
-		os.Exit(1)
+		response, err := pm.sendCommand("LOGS", nameOrID, linesStr, followStr, showErrorStr)
+		if err != nil {
+			fmt.Printf("错误: %v\n", err)
+			os.Exit(1)
+		}
+
+		if strings.HasPrefix(response, "ERROR:") {
+			fmt.Printf("错误: %s\n", strings.TrimPrefix(response, "ERROR: "))
+			os.Exit(1)
+		}
+
+		// follow模式下，守护进程会直接输出到控制台
+		// 这里我们需要实现一个简化的客户端follow
+		process := pm.findProcess(nameOrID)
+		if process == nil {
+			fmt.Printf("未找到进程: %s\n", nameOrID)
+			os.Exit(1)
+		}
+
+		var logFile string
+		if showError {
+			logFile = process.ErrorFile
+			if logFile == "" {
+				logFile = filepath.Join(pm.dataDir, "logs", fmt.Sprintf("%s-error.log", process.Name))
+			}
+		} else {
+			logFile = process.LogFile
+			if logFile == "" {
+				logFile = filepath.Join(pm.dataDir, "logs", fmt.Sprintf("%s.log", process.Name))
+			}
+		}
+
+		// 客户端直接跟踪日志文件
+		err = pm.clientFollowLogs(logFile, lines)
+		if err != nil {
+			fmt.Printf("错误: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// 非follow模式，使用原来的方式
+		var err error
+		if showError {
+			err = pm.GetErrorLogs(nameOrID, lines, false)
+		} else {
+			err = pm.GetLogs(nameOrID, lines, false)
+		}
+
+		if err != nil {
+			fmt.Printf("错误: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -597,6 +719,30 @@ func runWatchDisable(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("✓ 禁用 '%s' 文件监控\n", nameOrID)
+}
+
+// runStopDaemon 停止守护进程
+func runStopDaemon(cmd *cobra.Command, args []string) {
+	if !isDaemonRunning() {
+		fmt.Println("守护进程未运行")
+		return
+	}
+
+	pm := NewProcessManager()
+	lockFile := filepath.Join(pm.dataDir, "daemon.lock")
+
+	if data, err := os.ReadFile(lockFile); err == nil {
+		if pid, err := strconv.Atoi(string(data)); err == nil {
+			if proc, err := process.NewProcess(int32(pid)); err == nil {
+				proc.Kill()
+				os.Remove(lockFile)
+				fmt.Println("✓ 守护进程已停止")
+				return
+			}
+		}
+	}
+
+	fmt.Println("✗ 停止守护进程失败")
 }
 
 // 辅助函数

@@ -131,6 +131,72 @@ func (pm *ProcessManager) followLogs(logFile string, lines int) error {
 	return scanner.Err()
 }
 
+// clientFollowLogs 客户端实时跟踪日志文件
+func (pm *ProcessManager) clientFollowLogs(logFile string, lines int) error {
+	// 首先显示最后N行
+	if lines > 0 {
+		if _, err := os.Stat(logFile); err == nil {
+			pm.showLogs(logFile, lines)
+		}
+	}
+
+	fmt.Printf("\n==> 正在跟踪日志文件: %s (按 Ctrl+C 退出)\n", logFile)
+
+	var file *os.File
+	var lastSize int64 = 0
+
+	// 如果文件存在，获取当前大小并移动到末尾
+	if fileInfo, err := os.Stat(logFile); err == nil {
+		lastSize = fileInfo.Size()
+	}
+
+	for {
+		// 检查文件是否存在
+		fileInfo, err := os.Stat(logFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// 文件不存在，等待创建
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			return fmt.Errorf("访问日志文件失败: %v", err)
+		}
+
+		// 如果文件大小发生变化
+		if fileInfo.Size() != lastSize {
+			// 重新打开文件
+			if file != nil {
+				file.Close()
+			}
+
+			file, err = os.Open(logFile)
+			if err != nil {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+
+			// 如果文件变小了（可能被轮转），从头开始读
+			if fileInfo.Size() < lastSize {
+				lastSize = 0
+			}
+
+			// 移动到上次读取的位置
+			file.Seek(lastSize, 0)
+
+			// 读取新内容
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				fmt.Println(scanner.Text())
+			}
+
+			// 更新文件大小
+			lastSize = fileInfo.Size()
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // readLastLines 读取文件的最后N行
 func (pm *ProcessManager) readLastLines(file *os.File, lines int) ([]string, error) {
 	fileInfo, err := file.Stat()
